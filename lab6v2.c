@@ -4,8 +4,10 @@
 #include <string.h>
 #include <fcntl.h>
 #include <sys/types.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <ext2fs/ext2_fs.h>
+#include <time.h>
 
 typedef unsigned int   u32;
 
@@ -23,13 +25,39 @@ DIR   *dp;
 #define BLKSIZE 1024
 #define BLOCK_OFFSET(block) (1024 + (block - 1) * 1024)
 
-char buf[BLKSIZE];
-int fd;
+char buf[BLKSIZE], *device;
+int fd, iblock;
 int imap, bmap;
 int ninodes, nblocks, nfreeInodes, nfreeBlocks;
-char *device;
-int iblock;
 
+char  *tokenPath[64] = {"\0"}, *disk, pathtemp[64][64], *path;
+
+// my tokenize method because strtok is the devil's work
+int tokenizePath(char input[], int index)
+{
+    printf("%s \n", input);
+    char temp[64];
+    if (*input == '\0')
+    {
+        tokenPath[index] = 0;
+        return index;
+    }
+    else
+    {
+        sscanf(input, "%[^/]", pathtemp[index]);
+        tokenPath[index] = pathtemp[index];
+        input += 1;
+        if (*input != '\0')
+            input += strlen(pathtemp[index]);
+        index += 1;
+        tokenizePath(input, index);
+    }
+}
+
+int tokenize(char input[])
+{
+	tokenizePath(input, 0);
+}
 //Step 0
 void get_block(int fd, int blk, char buf[BLKSIZE])
 {
@@ -44,7 +72,7 @@ static void get_inode(int fd, int ino, INODE *inode)
 }
 
 
-//Taken from prelab
+//prelab
 super()
 {
   // Read SUPER block
@@ -58,125 +86,34 @@ super()
     printf("NOT an EXT2 FS\n");
     exit(1);
   }
-  printf ("-------- info --------\n");
-  printf("EXT2 FS OK\n");
-
-  printf("s_inodes_count = \t\t\t%d\n", sp->s_inodes_count);
-  printf("s_blocks_count = \t\t\t%d\n", sp->s_blocks_count);
-
-  printf("s_free_inodes_count = \t\t\t%d\n", sp->s_free_inodes_count);
-  printf("s_free_blocks_count = \t\t\t%d\n", sp->s_free_blocks_count);
-  printf("s_first_data_blcok = \t\t\t%d\n", sp->s_first_data_block);
-
-
-  printf("s_log_block_size = \t\t\t%d\n", sp->s_log_block_size);
-  //printf("s_log_frag_size = %d\n", sp->s_log_frag_size);
-
-  printf("s_blocks_per_group = \t\t\t%d\n", sp->s_blocks_per_group);
-  //printf("s_frags_per_group = %d\n", sp->s_frags_per_group);
-  printf("s_inodes_per_group = \t\t\t%d\n", sp->s_inodes_per_group);
-
-
-  printf("s_mnt_count = \t\t\t\t%d\n", sp->s_mnt_count);
-  printf("s_max_mnt_count = \t\t\t%d\n", sp->s_max_mnt_count);
-
-  printf("s_magic = \t\t\t\t%x\n", sp->s_magic);
-
-  printf("s_mtime = \t\t\t\t%s", ctime(&sp->s_mtime));
-  printf("s_wtime = \t\t\t\t%s", ctime(&sp->s_wtime));
 }
 
-int dirSearch(char name[1024][1024], int ind, INODE *inoptr)
+int search(INODE *ip, char *name)
 {
-	char dirname[256];
-	int i = 0;
-	char *cp;
-	int temp = 0;
-
-	//We get the first i_block and put it in the buf
-	//get_block(fd, ip->i_block[0], buf);
-	//dp = (DIR *)buf; //set the dir
-	//cp = buf; //set the cp
-
-	printf("-------- Dir Search --------\n");
-	printf("Searching for %s\n", name[ind]);
-	while (inoptr->i_block[i] != 0)
-	{
-		//get_block(fd, ip->i_block[0], buf);
-		get_block(fd, inoptr->i_block[i], buf);
-		dp = (DIR *)buf;
-		cp = buf;
-
-		printf("%d\n", dp->inode);
-		while (cp < buf + BLKSIZE)
-		{
+    char dbuf[1024], dirname[256];
+    DIR *dp; 
+    char *cp;
+    get_block(fd, ip->i_block[0], dbuf);
+    dp = (DIR*)dbuf;
+    cp = dbuf;
+    while (cp < (dbuf + BLKSIZE))
+    {
 		strncpy(dirname, dp->name, dp->name_len);
 		dirname[dp->name_len] = 0;
-		printf ("Dir name = %s\n", dirname);
-		if (!strcmp(name[ind], dirname))
+        printf("%s  ", dirname);
+		if (!strcmp(name, dirname))
 		{
-			printf("Found what we were looking for!\n");
+			printf("Found\n");
 			return dp->inode;
 		}
-		//increment
-		cp += dp->rec_len;
-		dp = (DIR *)cp;
-		//scanf("%d", &temp);
-	}
-	i++;
-	}
-	printf("Couldn't find it!\n");
+        cp += dp->rec_len;       // advance cp by rec_len in BYTEs
+        dp = (DIR*)cp;
+    }
+	printf("Path not found \n");
 	return 0;
 }
 
-int fullSearch(char name [1024][1024], int num_paths)
-{
-	int i = 0;
-	int mail = 0;
-	int ino = 0;
-	char *cp;
-	INODE dirnode;
-
-	get_inode(fd, 2, &dirnode);
-	for (i = 0; i < num_paths; i++)
-	{
-
-    if (i < num_paths)
-    {
-      if(!S_ISDIR(dirnode.i_mode))
-      {
-        printf("Cannot search through a file!\n");
-        exit(0);
-      }
-    }
-
-		ino = dirSearch(name, i, &dirnode);
-    if (ino == 0)
-    {
-      printf("File does not exist!\n");
-      exit(0);
-    }
-
-    printf("Found %s at inode #%d!\n", name[i], ino);
-		get_inode(fd, ino, &dirnode);
-	}
-  return ino;
-}
-
-mailMan(int ino)
-{
-	int blocknum = 0;
-	int inodenum = 0;
-
-	blocknum = (ino-1)/8 + ip->i_block[0] - 1;
-	printf("blocknum = %d\n", blocknum);
-	//inodenum = (ino-1)%8;
-	//printf("inodenum = %d\n", inodenum);
-
-  return blocknum;
-}
-
-void printStuff(int ino, char name[1024][1024], int num)
+void printStuff(int ino, int num)
 {
 	int i, j, cycle_blocks, num_blocks, indirect[256], double_indirect[256];
 	INODE file;
@@ -190,8 +127,8 @@ void printStuff(int ino, char name[1024][1024], int num)
 	num_blocks = file.i_size / BLKSIZE;
 	cycle_blocks = num_blocks;
 
-	printf("========== PRINTING STUFF ==========\n");
-	printf("Located %s!\n", name[num-1]);
+	printf("PRINT---------------\n");
+	printf("--------%s---------\n", tokenPath[num-1]);
 	printf("size: %u\n", file.i_size);
 	printf("blocks: %u\n", num_blocks);
 	printf("access time: %s", ctime(&(file.i_atime)));
@@ -220,7 +157,7 @@ void printStuff(int ino, char name[1024][1024], int num)
 
 	if (num_blocks > 0)
 	{
-		printf("-------- INDIRECT BLOCKS --------\n");
+		printf("IND Blocks----\n");
 		cycle_blocks = num_blocks;
 		if (cycle_blocks > 256)
 		{
@@ -233,7 +170,7 @@ void printStuff(int ino, char name[1024][1024], int num)
 
 		if (num_blocks > 0)
 		{
-			printf("-------- DOUBLE INDIRECT BLOCKS --------\n");
+			printf("Double IND Blocks-------\n");
 			get_block(fd, file.i_block[13], double_indirect);
 			for (j = 0; j < 256; j++)
 			{
@@ -276,13 +213,10 @@ void printBlocks(int cycle_blocks, int indirect[256])
 
 int main(int argc, char *argv[])
 {
-	int i, j, ino;
+	int i, j, ino, block, offset;
 	char buf[BLKSIZE];
 	char path[2048];
-	char *temp;
-	//For parsed path
-	char name[1024][1024];
-  char *cp;
+	char *temp, *cp;
 
 	//Check if enough arguments
 	if(argc > 2)
@@ -296,26 +230,13 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	//Parse the path
-  //This is also task 4
-	i = 0;
-	j = 0;
-	strcat(path, "/");
-	temp = strtok(path, "/");
-	while(temp != NULL)
-	{
-		strcpy(name[i], temp);
-		temp = strtok(NULL, "/");
-		i++;
-		j++;
-	}
-
-	printf("n = %d", j + 1);
+	//tokenize path
+	j = tokenize(path);
 
 	for(i = 0; i < j; i++)
-		printf("  %s  ", name[i]);
+		printf("  %s  ", tokenPath[i]);
 
-  fd = open(device, O_RDONLY);
+  	fd = open(device, O_RDONLY);
 	if(fd < 0)
 	{
 		printf("open %s failed\n", device);
@@ -328,39 +249,46 @@ int main(int argc, char *argv[])
 	super();
 
 	//task 2
-  //This puts the group descriptor block in the buff
-  //So we can access the inodes
+	//This puts the group descriptor block in the buff
+	//So we can access the inodes
 	get_block(fd, 2, buf);
-  gp = (GD *)buf; //Points to the struct in our buf
-  iblock = gp->bg_inode_table;   // Get inode start block#
-  printf("inode_block=\t\t\t\t%d\n", iblock);
+	gp = (GD *)buf; //Points to the struct in our buf
+	iblock = gp->bg_inode_table;   // Get inode start block#
+	printf("inode_block=\t\t\t\t%d\n", iblock);
 
-  // get inode start block
-  // iblock is the starting point of the Inodes
-  get_block(fd, iblock, buf); //This puts the inode table into the buf
+	// get inode start block
+	// iblock is the starting point of the Inodes
+	get_block(fd, iblock, buf); //This puts the inode table into the buf
 
-  //Task 3
-  ip = (INODE *)buf + 1;      // This makes ip point at the 2nd INODE WHICH IS ROOT
+	//Task 3
+	ip = (INODE *)buf + 1;      // This makes ip point at the 2nd INODE WHICH IS ROOT
 
-  printf ("-------- Root Node Info --------\n");
-  printf("mode=%4x ", ip->i_mode);
-  printf("uid=%d  gid=%d\n", ip->i_uid, ip->i_gid);
-  printf("size=%d\n", ip->i_size);
-  printf("time=%s", ctime(&ip->i_ctime));
-  printf("link=%d\n", ip->i_links_count);
-  printf("i_block[0]=%d\n", ip->i_block[0]);
+	printf ("-------- Root Node Info --------\n");
+	printf("mode=%4x ", ip->i_mode);
+	printf("uid=%d  gid=%d\n", ip->i_uid, ip->i_gid);
+	printf("size=%d\n", ip->i_size);
+	printf("time=%s", ctime(&ip->i_ctime));
+	printf("link=%d\n", ip->i_links_count);
+	printf("i_block[0]=%d\n", ip->i_block[0]);
 
-  //Task 5
-	//ino = dirSearch(name);
-
-  //Task 6
-	//mailMan(ino);
-
-	ino = fullSearch(name, j);
+	for (i=0; i < j; i++)
+	{
+		ino = search(ip, tokenPath[i]);
+		if (ino==0)
+		{
+			printf("can't find %s\n", tokenPath[i]); exit(1);
+		}
+		// Mailman's algorithm: Convert (dev, ino) to inode pointer
+		block  = (ino - 1) / 8 + iblock;  // disk block contain this INODE 
+		offset = (ino - 1) % 8;         // offset of INODE in this block
+		get_block(fd, block, buf);
+		ip = (INODE *)buf + offset;    // ip -> new INODE
+	}
+	//ino = fullSearch(j);
 
 	//Task 9
 	//Print some stuff
-	printStuff(ino, name, j);
+	printStuff(ino, j);
 
 
 	return 0;
