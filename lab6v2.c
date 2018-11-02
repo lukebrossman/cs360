@@ -139,13 +139,13 @@ void printStuff(int ino, int num)
 	printf("flags: %d\n", file.i_flags);
 	printf("blk = %d\n", blk_size);
 
-	printf("-------- DISK BLOCKS --------\n");
+	printf("\n-------- DISK Blocks\n");
 	for (i = 0; i < 14; i++)
 	{
 		printf("block[%d]: %d\n", i, file.i_block[i]);
 	}
 
-	printf("\n-------- DIRECT BLOCKS --------\n");
+	printf("\nDIRECT Blocks --------\n");
 	if (cycle_blocks > 12)
 	{
 		cycle_blocks = 12;
