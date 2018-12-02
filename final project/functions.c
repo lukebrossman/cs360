@@ -2,27 +2,12 @@
 #include "type.h"
 #include "util.h"
 
-//////////////// OTHER FUNCTIONS ////////////////
-// display the startup help
-void startuphelp()
-{
-	printf("Type '");
-	printf(KBLU"help");
-	printf(KNRM"' or '");
-	printf(KBLU"menu");
-	printf(KNRM"' to access a list of possible commands.\n");
-}
-
-// initialize the program
+// initialize
 void init(char *tempcmd)
 {
 	int i;
-	printf("Initializing program...");
+	printf("Initializing...");
 	sleepmode = 0;
-	for (i = 0; i < 16; i++)
-	{
-		strcpy(lastcommands[i], "");
-	}
 	// P[0] has uid= 0, gid = 0, cwd = 0
 	P[0].uid = 0;
 	P[0].gid = 0;
@@ -31,14 +16,14 @@ void init(char *tempcmd)
 	P[1].uid = 1;
 	P[1].gid = 0;
 	P[1].cwd = 0;
-	// initialize the minode array with refcount = 0 for all minodes
+	// initialize the minode table with 0 references for each minode
 	for(i = 0; i < NMINODES; i++)
 		minode[i].refCount = 0;
-	// set root device = 0
+	//set root device = 0
 	root = 0;
 	// mount root device
 	mount_root(tempcmd);
-	// set running proc to P[0] and the ready proc to P[1]
+	//we initialize with p[0] as running process and p[1] as ready
 	running = &P[0];
 	readQueue = &P[1];
 }
@@ -61,12 +46,13 @@ void mount_root(char *tempcmd)
 		devicename[strlen(devicename) - 1] = 0;
 	}
 	else
+	{
 		strcpy(devicename, tempcmd);
-  
+	}
 	dev = open(devicename, O_RDWR); // open device for read/write
 	if(dev < 0) // does the device not exist or otherwise invalid?
 	{
-		printf("Cannot open %s!\n", devicename);
+		printf("Cannot open %s\n", devicename);
 		exit(1);
 	}
 	// now lets read the device to verify that its correct type and get some info
@@ -80,13 +66,12 @@ void mount_root(char *tempcmd)
 
 	if (magic != 0xEF53 && magic != 0xEF51)
 	{
-		printf("%x does not equal %x or %x\n", magic, 0xEF53, 0xEF51);
-		printf("Device: %s is not of type EXT2! Shutting down program!\n", dev);
+		printf("ERROR: Non ext2 file system.\n", dev);
 		exit(1);
 	}
 	else
 	{
-		printf("Gathering device information...");
+		printf("Getting device info...");
 		get_block(dev, GDBLOCK, buf);
 		gp = (GD *)buf;
 		root = iget(dev, ROOT_INODE);
@@ -104,55 +89,50 @@ void mount_root(char *tempcmd)
 		P[1].cwd = root;
 		root->refCount = 3;
 	}
-	printf("Program loaded!\n");
+	printf("Program loaded\n");
 }
 
 // find and execute the inputted command
 void find_and_execute_command(char *tempcmd)
 {
 	int i, r;
-	for (i = 0; ftable[i].functionName; i++)
+	for (i = 0; cmdtable[i].functionName; i++)
 	{
-		if (!strcmp(tempcmd, ftable[i].functionName))
+		if (!strcmp(tempcmd, cmdtable[i].functionName))
 		{
 			printf("******************** ");
-			printf(KBLU"%s", ftable[i].functionName);
-			printf(KNRM" *******************\n");
+			printf("%s", cmdtable[i].functionName);
+			printf(" *******************\n");
 			printf("Command Arguments: ");
-			printf(KGRN"%s", pathname);
-			printf(KNRM", ");
-			printf(KGRN"%s\n", parameter);
-			printf(KNRM"*********************************************\n");
-			r = ftable[i].f();
+			printf("%s", pathname);
+			printf(", ");
+			printf("%s\n", parameter);
+			printf("*********************************************\n");
+			r = cmdtable[i].f();
 			printf("*********************************************\n");
 			if (r != 0)
 				printf("Error executing command: ");
 			else
 				printf("Successfully executed command: ");
-			printf(KBLU"%s\n", ftable[i].functionName);
-			printf(KNRM"*********************************************\n");
+			printf("%s\n", cmdtable[i].functionName);
+			printf("*********************************************\n");
 			return;
 		}
 	}
-	printf("Invalid command!\n");
+	printf("Invalid command\n");
 	startuphelp();
 }
 
 
-// displays a list of commands (and how to use them).
+//display the suppoted commands
 int CMD_MENU()
 {
 	int i;
-	for (i = 0; ftable[i].functionName; i++)
+	for (i = 0; cmdtable[i].functionName; i++)
 	{
-		printf(KBLU" - %s", ftable[i].functionName);
-		if (ftable[i].paramOptional == 0)
-			printf(KRED"%s", ftable[i].functionParameters);
-		else if (ftable[i].paramOptional == 1)
-			printf(KYEL"%s", ftable[i].functionParameters);
-		printf(KNRM"%s\n", ftable[i].functionHelp);
+		printf(" %s | ", cmdtable[i].functionName);
 	}
-		
+	printf("\n");
 	return 0;
 }
 
@@ -168,7 +148,7 @@ void CMD_QUIT()
 		while(minode[i].refCount)
 			iput(&minode[i]);
 	}
-	printf("Cleanup complete...Shutting down!\n");
+	printf("Cleanup complete...Shutting down\n");
 	exit(1);
 }
 
@@ -202,7 +182,7 @@ int CMD_CD()
 	if(((mp->INODE.i_mode) & 0040000) != 0040000)
 	{
 		// if not dir...
-		printf("%s is not a directory!\n", pathname);
+		printf("%s is not a directory\n", pathname);
 		iput(mp);
 		return 1;
 	}
@@ -229,16 +209,19 @@ int CMD_MKDIR()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for a new directory given!\n");
+		printf("No pathname for a new directory given\n");
 		return 1;
 	}
 
 	// absolute vs. relative path checking
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
-
+	}
 	// find the in-memory minode of the parent
 	if(findparent(pathname)) // root inode
 	{  
@@ -287,16 +270,19 @@ int CMD_CREAT()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for a new file given!\n");
+		printf("Invalid Pathname\n");
 		return 1;
 	}
 
 	//check if it is absolute path to determine where the inode comes from
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
-
+	}
 	// find the in-memory minode of the parent
 	if(findparent(pathname)) // root inode
 	{  
@@ -345,23 +331,26 @@ int CMD_RMDIR()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for a directory to remove given!\n");
 		return 1;
 	}
 
 	// absolute vs. relative path stuffs
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
-
+	}
 	// get the inumber of the path
 	ino = getino(&dev, pathname);
 
 	// path doesn't exist
 	if(!ino)
+	{
 		return 1;
-
+	}
 	// get a pointer to its minode[]
 	mip = iget(dev,ino);
 	
@@ -376,7 +365,7 @@ int CMD_RMDIR()
 	// check if its not busy
 	if(mip->refCount>1)
 	{
-		printf("DIR is being used.\n");
+		printf("Directory is in use.\n");
 		iput(mip);
 		return 1;
 	}
@@ -384,7 +373,7 @@ int CMD_RMDIR()
 	// check if its not empty
 	if(!isEmpty(mip))
 	{
-		printf("DIR not empty\n");
+		printf("directory is not empty\n");
 		iput(mip);
 		return 1;
 	}
@@ -405,7 +394,9 @@ int CMD_RMDIR()
 
 	// get the name of the parent
 	if(findparent(pathname))
+	{
 		my_name = basename(pathname);
+	}
 	else
 	{
 		my_name = (char *)malloc((strlen(pathname)+1)*sizeof(char));
@@ -438,26 +429,28 @@ int CMD_LINK()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for the original file given!\n");
 		return 1;
 	}
 	if (parameter[0] == 0)
 	{
-		printf("No pathname for the new hardlink file given!\n");
 		return 1;
 	}
 
 	// absolute vs. relative paths
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
-
+	}
 	// get the inumber of the original file, if it exists
 	oldIno = getino(&dev, pathname);
 	if(!oldIno)
+	{
 		return 1;
-
+	}
 	mip = iget(dev,oldIno);
 
 	// verify the original file is a REG file...DIRs are not invited :(
@@ -472,10 +465,13 @@ int CMD_LINK()
 
 	// absolute vs. relative stuffs for new file
 	if(parameter[0] == '/')
+	{
 		newDev = root->dev;
+	}
 	else
+	{
 		newDev = running->cwd->dev;
-
+	}
 	// find the parent inode for the new file
 	if(findparent(parameter))
 	{
@@ -485,18 +481,19 @@ int CMD_LINK()
 		inumber = getino(&newDev, parent);
 
 		if(!inumber)
+		{
 			return 1;
+		}
 
 		if(newDev != dev)
 		{
-			printf("How did this even happen?!?!??!?!?!?!\n");
 			return 1;
 		}
 
 		mip = iget(newDev,inumber);
 
 		// verify parent is a DIR
-		if(((mip->INODE.i_mode) & 0040000) != 0040000)  
+		if(is_dir(mip))  
 		{
 			printf("%s is not DIR file.\n", parent);
 			iput(mip);
@@ -518,7 +515,6 @@ int CMD_LINK()
 
 		if(running->cwd->dev != dev)
 		{
-			printf("It is amazing that this managed to show up!\n");
 			return -1;
 		}
 
@@ -617,31 +613,34 @@ int CMD_SYMLINK()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for the original file given!\n");
 		return 1;
 	}
 	if (parameter[0] == 0)
 	{
-		printf("No pathname for the new symlink file given!\n");
 		return 1;
 	}
 
 	// absolute vs. relative path stuffs
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
+	}
 
 	// check if old name exists
 	inumber = getino(&dev, pathname);
 	if(!inumber)
+	{
 		return 1;
-
+	}
 	// get the minode for the old name
 	mip = iget(dev, inumber);
 
 	// make sure it is REG file
-	if(((mip->INODE.i_mode) & 0100000) != 0100000 && (((mip->INODE.i_mode) & 0040000) != 0040000))  
+	if(!(is_reg(mip)) && !(is_dir(mip))  
 	{
 		printf("%s is not a REG file or DIR.\n",pathname);
 		iput(mip);
@@ -651,9 +650,13 @@ int CMD_SYMLINK()
 
 	// absolute vs. relative path stuff
 	if(parameter[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
+	}
 
 	// find the parent inode for the new file
 	if(findparent(parameter))
@@ -698,7 +701,9 @@ int CMD_SYMLINK()
 	inumber = getino(&dev, parameter);
 
 	if(!inumber)
+	{
 		return 1;
+	}
 
 	mip = iget(dev, inumber);
 	mip->INODE.i_mode = 0xA1FF; // change the mode of the new file to a symlink
@@ -718,7 +723,6 @@ int CMD_TOUCH()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for the file to touch given!\n");
 		return 1;
 	}
 
@@ -726,8 +730,9 @@ int CMD_TOUCH()
 	inumber = getino(&dev, pathname);
 
 	if(!inumber)
+	{
 		return 1;
-
+	}
 	// load the file into memory
 	mip = iget(dev, inumber);
 
@@ -748,12 +753,10 @@ int CMD_CHMOD()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for the file to change permissions given!\n");
 		return 1;
 	}
 	if (parameter[0] == 0)
 	{
-		printf("No permissions for the file given!\n");
 		return 1;
 	}
 
@@ -762,18 +765,25 @@ int CMD_CHMOD()
 	inumber = getino(&dev, pathname);
 
 	if(!inumber)
+	{
 		return 1;
-
+	}
 	// load the file into memory
 	mip = iget(dev, inumber);
 
 	// change its permissions accordingly to those the user desires
-	if((mip->INODE.i_mode & 0100000) == 0100000) 
+	if(is_reg(mip)) 
+	{
 		mip->INODE.i_mode = 0100000 + mode;
-	else if ((mip->INODE.i_mode & 0040000) == 0040000)
+	}
+	else if (is_dir(mip))
+	{
 		mip->INODE.i_mode = 0040000 + mode;
+	}
 	else
+	{
 		mip->INODE.i_mode = 0120000 + mode;
+	}
 
 	// mark dirty
 	mip->dirty = 1;
@@ -789,7 +799,6 @@ int CMD_STAT()
 	
 	if (pathname[0] == 0)
 	{
-		printf("No pathname for the file to get information on given!\n");
 		return 1;
 	}
 	return do_stat(pathname, &mystat);
@@ -799,9 +808,13 @@ int CMD_STAT()
 int CMD_PWD()
 {
 	if(running->cwd == root)
+	{
 		printf("/");
+	}
 	else
+	{
 		do_pwd(running->cwd);
+	}
 
 	printf("\n");
 	return 0;
@@ -816,8 +829,7 @@ int do_ls(char *path)
 	int device = running->cwd->dev;
 	char *child;
 
-	// if there was no additional argument, print the cwd
-	if(path[0] == 0)
+	if(path[0] == 0)// no parameters, so print cwd info
 	{
 		mip = iget(device, running->cwd->ino);
 		printChild(device, mip);
@@ -827,23 +839,28 @@ int do_ls(char *path)
 	{
 		// if we're to print the root, change device to it
 		if(path[0] == '/')
+		{
 			device = root->dev;
-
+		}
 		// get the inode for the current path part
 		ino = getino(&device, path);
 
 		// pathname doesn't exist
 		if(!ino)
+		{
 			return 1;
+		}
 
 		mip = iget(device, ino);
 
 		// if we're not looking at a directory...
-		if(((mip->INODE.i_mode) & 0040000)!= 0040000)
+		if(!(is_dir(mip)))
 		{
 			// find the parent of the path part and get its's basename
 			if(findparent(path))
+			{
 				child = basename(pathname);
+			}
 			// if it doesn't exist, get the name of the child path
 			else
 			{
@@ -871,19 +888,19 @@ void printFile(MINODE *mip, char *namebuf)
 	int type;
 
 	mode = mip->INODE.i_mode;
-	// print out info in the file in same format as ls -l in linux
+	// print out file info
 	// print the file type
-	if((mode & 0120000) == 0120000)
+	if(is_link(mip))
 	{
 		printf("l");
 		type = LINK;
 	}
-	else if((mode & 0040000) == 0040000)
+	else if(is_dir(mip))
 	{
 		printf("d");
 		type = DIRECTORY;
 	}
-	else if((mode & 0100000) == 0100000)
+	else if(is_reg(mip))
 	{
 		printf("-");
 		type = FILE;
@@ -936,11 +953,14 @@ void printFile(MINODE *mip, char *namebuf)
 	Time[strlen(Time) -1 ] = 0;
 	printf(" %s ", Time);
 
-	if((mode & 0120000) == 0120000)//if true then this file is a symlink
+	if(is_link(mip))
+	{
 		printf(" => %s\n",(char *)(mip->INODE.i_block));//file that the link points to
+	}
 	else
+	{
 		printf("\n");
-
+	}
 	iput(mip);
 } 
 
@@ -1146,7 +1166,9 @@ int my_creat(MINODE *pip, char *name)
 	//Finally enter name into parent's directory, assume all direct data blocks
 	i = 0;
 	while(pip->INODE.i_block[i])
+	{
 		i++;
+	}
 	i--;  
 
 	get_block(pip->dev, pip->INODE.i_block[i], buf);
@@ -1431,9 +1453,13 @@ int do_unlink(int forcerm)
 
 	// absolute vs. relative paths
 	if(pathname[0] == '/')
+	{
 		dev = root->dev;
+	}
 	else
+	{
 		dev = running->cwd->dev;
+	}
 
 	// get the path's inumber
 	inumber = getino(&dev, pathname);
@@ -1444,7 +1470,7 @@ int do_unlink(int forcerm)
 	mip = iget(dev, inumber);
 
 	// verify that we're dealing with a file, not a DIR
-	if(((mip->INODE.i_mode) & 0040000) == 0040000)
+	if(is_dir(mip))
 	{
 		printf("%s is not a REG file.\n", pathname);
 		iput(mip);
@@ -1540,5 +1566,34 @@ int do_unlink(int forcerm)
 	mip->dirty = 1;
 	iput(mip);
 	
+	return 0;
+}
+
+//helper function returns 1 if minode given is dir 0 if not
+int is_dir(MINODE *mip)
+{
+	if((mip->INODE.i_mode & 0040000) == 0040000)
+	{
+		return 1;
+	}
+	return 0;
+}
+
+//helper checks if regular file
+int is_reg(MINODE *mip)
+{
+	if((mip->INODE.i_mode & 0100000) == 0100000))
+	{
+		return 1;
+	}
+	return 0;
+}
+
+int is_link(MINODE *mip)
+{
+	if((mip->INODE.i_mode & 0120000) == 0120000))
+	{
+		return 1;
+	}
 	return 0;
 }

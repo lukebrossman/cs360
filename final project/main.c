@@ -3,23 +3,23 @@
 #include "type.h"
 #include "util.h"
 
-// table of function pointers
-functionTable ftable[] ={
-	{"help", CMD_MENU, "", ": display this help menu.", 2},
-	{"exit", CMD_QUIT, "", ": exit the program.", 2},
-	{"cd", CMD_CD, " [path]", ": Change cwd to the path (defaults to root directory).", 1},
-	{"ls", CMD_LS, " [path]", ": List all files in the path (defaults to cwd).", 1},
-	{"mkdir", CMD_MKDIR, " <name>", ": make a directory with name.", 0},
-	{"creat", CMD_CREAT, " <name>", ": make a file with name.", 0},
-	{"rmdir", CMD_RMDIR, " <name>", ": remove a directory with name.", 0},
-	{"rm", CMD_UNLINK, " <name>", ": remove a file with name.", 0},
-	{"link", CMD_LINK, " <name> <newname>:", " Hard link file with name to file with newname.", 0},
-	{"unlink", CMD_UNLINK, " <name>", ": Unlink file with name.", 0},
-	{"symlink", CMD_SYMLINK, " <name> <newname>", ": Symlink file with name to file with newname.", 0},
-	{"touch", CMD_TOUCH, " <name>", ": Touch a file with name.", 0},
-	{"chmod", CMD_CHMOD, " <name> <perms>", ": Change the permissions (0777-style) of the file with name.", 0},
-	{"stat", CMD_STAT, " <name>", ": Display information on file with name.", 0},
-	{"pwd", CMD_PWD, "", ": Print the current working directory (cwd).", 2},
+// table of function pointers, cannot be declared in type.h under globals because type.h does not include functions.h
+command cmdtable[] ={
+	{"help", CMD_MENU, 2},
+	{"exit", CMD_QUIT,2},
+	{"cd", CMD_CD, 1},
+	{"ls", CMD_LS, 1},
+	{"mkdir", CMD_MKDIR, 0},
+	{"creat", CMD_CREAT, 0},
+	{"rmdir", CMD_RMDIR, 0},
+	{"rm", CMD_UNLINK, 0},
+	{"link", CMD_LINK, 0},
+	{"unlink", CMD_UNLINK, 0},
+	{"symlink", CMD_SYMLINK, 0},
+	{"touch", CMD_TOUCH, 0},
+	{"chmod", CMD_CHMOD, 0},
+	{"stat", CMD_STAT, 0},
+	{"pwd", CMD_PWD, 2},
 	{0, 0, 0, 0, 0}
 };
 
@@ -33,9 +33,7 @@ void main(int argc, char* argv[])
 	else
 		init("");
 	
-	// tell user about help menu on startup
-	printf("*********************************************\n");
-	startuphelp();
+	printf("===========================================\n");
 
 	while(1)
 	{
@@ -56,8 +54,6 @@ void main(int argc, char* argv[])
 		// find and execute the command
 		find_and_execute_command(cname);
 		
-		// save command
-		savecommand(line);
 		
 		if (sleepmode)
 			sleep(2);

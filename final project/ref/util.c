@@ -195,7 +195,7 @@ MINODE *iget(int dev, unsigned long ino){
 	exit(0);
 }
 
-// save the minode back onto the disk
+// save the minode to the disk
 void iput(MINODE *mip)
 {
 	int nodeIndex,blockIndex;
