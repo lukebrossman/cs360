@@ -62,7 +62,6 @@ char *dirname(char *pathname)
 		strncpy(dirname, pathname, i); //set dirname to the first i characters of pathname
 		dirname[i] = 0; //set the last char of dirname to null incase it wasn't already
 	}
-
 	return dirname; //dirname is now everything up to the basname in the path
 }
 
@@ -190,7 +189,7 @@ MINODE *iget(int dev, unsigned long ino){
 			blockIndex = (ino - 1) / INODES_PER_BLOCK + INODEBLOCK; //mailmans algorithm to get the blockindex we want from device
 			get_block(dev,blockIndex,buf);//get the block we want so we can write it into the minode table
 			cp = (INODE *)buf;//we need to be able to reference the buffer as a block
-			cp+= nodeIndex;//move the pointer to BLOCK_SIZE number of bytes up to the inode we want
+			cp += nodeIndex;//move the pointer to BLOCK_SIZE number of bytes up to the inode we want
 			minode[i].INODE = *cp;//set the minode.inode at i to point at our inode
 			minode[i].dev = dev;//device is the given device so we can find later
 			minode[i].ino = ino;//which index is this inode
@@ -231,7 +230,7 @@ void iput(MINODE *mip)
 }
 
 //search for a file with the given inode index and return its name as output parameter
-int searchino(MINODE *parent, unsigned long ino, char *name)
+int searchname(MINODE *parent, unsigned long ino, char *name)
 {
 	int i;
 	char buf[BLOCK_SIZE], namebuf[256], *cp;

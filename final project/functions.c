@@ -3,7 +3,7 @@
 #include "util.h"
 
 // initialize
-void init(char *tempcmd)
+void init(char *devcmd)
 {
 	int i;
 	printf("Initializing...");
@@ -18,18 +18,20 @@ void init(char *tempcmd)
 	P[1].cwd = 0;
 	// initialize the minode table with 0 references for each minode
 	for(i = 0; i < NMINODES; i++)
+	{
 		minode[i].refCount = 0;
+	}
 	//set root device = 0
 	root = 0;
 	// mount root device
-	mount_root(tempcmd);
+	mount_root(devcmd);
 	//we initialize with p[0] as running process and p[1] as ready
 	running = &P[0];
 	readQueue = &P[1];
 }
 
 // mount (and verify) the root device
-void mount_root(char *tempcmd)
+void mount_root(char *devcmd)
 {
 	char buf[BLOCK_SIZE];
 	int dev;
@@ -39,23 +41,23 @@ void mount_root(char *tempcmd)
 	printf("Mounting root device...");
 
 	// was a device passed as an argument or do we need one?
-	if (!strcmp(tempcmd, ""))
+	if (!strcmp(devcmd, ""))
 	{
-		printf("Device? ");
+		printf("This program needs a device to mount: ");
 		fgets(devicename, 128, stdin);
 		devicename[strlen(devicename) - 1] = 0;
 	}
 	else
 	{
-		strcpy(devicename, tempcmd);
+		strcpy(devicename, devcmd);
 	}
 	dev = open(devicename, O_RDWR); // open device for read/write
-	if(dev < 0) // does the device not exist or otherwise invalid?
+	if(dev < 0) //dev was unable to open for some reason
 	{
 		printf("Cannot open %s\n", devicename);
 		exit(1);
 	}
-	// now lets read the device to verify that its correct type and get some info
+	// read device and check some info
 	get_block(dev, SUPERBLOCK, buf);
 	sp = (SUPER *)buf;
 	magic = sp->s_magic;
@@ -85,8 +87,8 @@ void mount_root(char *tempcmd)
 		strcpy(root->mountptr->name, "/");
 		root->mounted = 1;
 		printf("Mounted root...");
-		P[0].cwd = root;
-		P[1].cwd = root;
+		P[0].cwd = iget(dev, ROOT_INODE);
+		P[1].cwd = iget(dev, ROOT_INODE);
 		root->refCount = 3;
 	}
 	printf("Program loaded\n");
@@ -100,27 +102,25 @@ void find_and_execute_command(char *tempcmd)
 	{
 		if (!strcmp(tempcmd, cmdtable[i].functionName))
 		{
-			printf("******************** ");
+			printf("==========");
 			printf("%s", cmdtable[i].functionName);
-			printf(" *******************\n");
-			printf("Command Arguments: ");
-			printf("%s", pathname);
-			printf(", ");
-			printf("%s\n", parameter);
-			printf("*********************************************\n");
+			printf("==========\n");
+			printf("Command Arguments: %s %s", pathname, parameter);
 			r = cmdtable[i].f();
-			printf("*********************************************\n");
 			if (r != 0)
+			{
 				printf("Error executing command: ");
+			}
 			else
+			{
 				printf("Successfully executed command: ");
+			}
 			printf("%s\n", cmdtable[i].functionName);
-			printf("*********************************************\n");
+			printf("=============================================\n");
 			return;
 		}
 	}
 	printf("Invalid command\n");
-	startuphelp();
 }
 
 
@@ -230,18 +230,21 @@ int CMD_MKDIR()
 		ino = getino(&dev, parent);
 
 		if(!ino)
+		{
 			return 1;
+		}
 		pip = iget(dev, ino);
 	}
-	else // other inode
+	else
 	{
 		pip = iget(running->cwd->dev,running->cwd->ino);
+		printf("%d : dev, %d: ino \n");
 		child = (char *)malloc((strlen(pathname) + 1) * sizeof(char));
 		strcpy(child, pathname);
 	}
 
 	// verify INODE is a DIR
-	if((pip->INODE.i_mode & 0040000) != 0040000) 
+	if(!(is_dir(pip))) 
 	{
 		printf("%s is not a directory.\n", parent);
 		iput(pip);
@@ -640,7 +643,7 @@ int CMD_SYMLINK()
 	mip = iget(dev, inumber);
 
 	// make sure it is REG file
-	if(!(is_reg(mip)) && !(is_dir(mip))  
+	if(!(is_reg(mip)) && !(is_dir(mip)))  
 	{
 		printf("%s is not a REG file or DIR.\n",pathname);
 		iput(mip);
@@ -680,7 +683,7 @@ int CMD_SYMLINK()
 	}
 
 	// verify that the parent is, in fact, a DIR
-	if((pip->INODE.i_mode & 0040000) != 0040000) 
+	if(!(is_dir(pip))) 
 	{
 		printf("%s is not a directory.\n", parent);
 		iput(pip);
@@ -820,7 +823,7 @@ int CMD_PWD()
 	return 0;
 }
 
-//////////////// HELPER FUNCTIONS ////////////////
+/* helper functions */
 // cycle through the specified pathname and list all files in it (or the single function)
 int do_ls(char *path)
 {
@@ -834,21 +837,18 @@ int do_ls(char *path)
 		mip = iget(device, running->cwd->ino);
 		printChild(device, mip);
 	}
-	// otherwise...
 	else
 	{
-		// if we're to print the root, change device to it
-		if(path[0] == '/')
+		if(path[0] == '/')//change device to the root so we can print
 		{
 			device = root->dev;
 		}
 		// get the inode for the current path part
 		ino = getino(&device, path);
 
-		// pathname doesn't exist
 		if(!ino)
 		{
-			return 1;
+			return 1;//bad path
 		}
 
 		mip = iget(device, ino);
@@ -1373,12 +1373,13 @@ void do_pwd(MINODE *wd)
 	int f;
 
 	if(wd == root) // if we're at the root, then exit function
+	{
 		return;
-
+	}
 	findino(wd, &myino, &parentino); // find the inode of the parent
 	wd = iget(wd->dev, parentino);
 	do_pwd(wd); // print the parent's path
-	findname(wd, myino, myname); // find this inode's name
+	searchname(wd, myino, myname); // find this inode's name
 	printf("/%s", myname); // print this inode's name
 	iput(wd); // cleanup
 }
@@ -1582,16 +1583,17 @@ int is_dir(MINODE *mip)
 //helper checks if regular file
 int is_reg(MINODE *mip)
 {
-	if((mip->INODE.i_mode & 0100000) == 0100000))
+	if((mip->INODE.i_mode & 0100000) == 0100000)
 	{
 		return 1;
 	}
 	return 0;
 }
 
+//helper checks if symlink
 int is_link(MINODE *mip)
 {
-	if((mip->INODE.i_mode & 0120000) == 0120000))
+	if((mip->INODE.i_mode & 0120000) == 0120000)
 	{
 		return 1;
 	}

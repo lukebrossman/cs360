@@ -1,0 +1,6 @@
+#!/bin/bash
+
+PATH=$PATH:./
+
+sudo bash mydiskfs.bash
+cc -w main.c functions.c util.c -o lvl1.out

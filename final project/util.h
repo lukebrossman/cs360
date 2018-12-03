@@ -16,7 +16,7 @@ unsigned long  getino(int *dev, char *pathname);
 unsigned long  search(MINODE *mip, char *filename);
 MINODE *iget(int dev, unsigned long ino);
 void iput(MINODE *mip);
-int searchino(MINODE *parent, unsigned long myino, char *name);
+int searchname(MINODE *parent, unsigned long myino, char *name);
 int findmyname(MINODE *parent, unsigned long myino, char *myname);
 int findino(MINODE *mip, unsigned long *myino, unsigned long *parentino);
 unsigned long ialloc(int dev);

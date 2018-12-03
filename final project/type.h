@@ -69,15 +69,6 @@ DIR   *dp;
 #define FILE 			1
 #define DIRECTORY		2
 
-// Globals
-PROC P[2]; //process array
-MINODE minode[NMINODES]; //memory inode array of size 100
-int dev, sleepmode;
-MINODE *root; //memeroy inode root of the files system
-PROC *running, *readQueue;
-char pathname[256], parameter[256], *name[256];
-
-
 // Table for open files
 typedef struct Oft{
   int   mode, refCount;
@@ -115,5 +106,13 @@ typedef struct Command{
   int (*f)();
   int paramOptional; // 0 = no, 1 = yes, 2 = no optional parameters
 } command;
+
+// Globals
+PROC P[2]; //process array
+MINODE minode[NMINODES]; //memory inode array of size 100
+int dev, sleepmode;
+MINODE *root; //memeroy inode root of the files system
+PROC *running, *readQueue;
+char pathname[256], parameter[256], *name[256];
 
 #endif 

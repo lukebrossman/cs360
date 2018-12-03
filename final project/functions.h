@@ -6,8 +6,8 @@
 extern command cmdtable[];
 
 /* startup functions */
-void init(char *tempcmd);
-void mount_root(char *tempcmd);
+void init(char *devcmd);
+void mount_root(char *devcmd);
 void find_and_execute_command(char *tempcmd);
 
 /* Commands */
