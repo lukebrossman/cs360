@@ -138,6 +138,100 @@ void find_and_execute_command(char *tempcmd)
 	startuphelp();
 }
 
+// save the latest command to the command buffer
+void savecommand(char tempcmd[256])
+{
+	int i, hasfreeslot = 0;
+	char *temp, cname[64];
+	
+	sscanf(tempcmd, "%s %s %64c", cname, pathname, parameter);
+	// don't do this if we're doing a last command
+	if (strcmp(cname, "prev") != 0)
+	{
+		// bump up commands buffer
+		for (i = 14; i >= 0; i--)
+		{
+			strcpy(lastcommands[i + 1], lastcommands[i]);
+		}
+		strcpy(lastcommands[0], "");
+		i = 0;
+		
+		// save to free slot
+		strcpy(lastcommands[0], tempcmd);
+	}
+}
+
+//////////////// COMMAND FUNCTIONS ////////////////
+//
+int CMD_LAST()
+{
+	int i, good = 0;
+	char line[256], cname[64], temp[8];
+	
+	// no argument
+	if(pathname[0] == 0)
+	{
+		for (i = 0; i < 16; i++)
+		{
+			printf("%d: ", i + 1);
+			printf(KGRN"%s", lastcommands[i]);
+			printf(KNRM"\n");
+		}
+	}
+	else
+	{
+		for (i = 0; i < 16; i++)
+		{
+			sprintf(temp, "%d", i + 1);
+			if (!strcmp(pathname, temp))
+			{
+				strcpy(line, lastcommands[i]);
+				good = 1;
+				break;
+			}
+		}
+		if (good)
+		{
+			memset(pathname, 0, 256);
+			memset(parameter, 0, 256);
+			// get the command, pathname, and parameter variables
+			sscanf(line, "%s %s %64c", cname, pathname, parameter);
+			
+			// find and execute the command
+			find_and_execute_command(cname);
+		}
+		else
+			return 1;
+	}
+	
+	return 0;
+}
+
+// initialize demo mode
+int CMD_TOGGLESLEEP()
+{
+	if (sleepmode)
+		sleepmode = 0;
+	else
+		sleepmode = 1;
+	printf("New Sleep Mode: %d\n", sleepmode);
+	return 0;
+}
+
+// 'clears' the screen of text
+int CMD_CLEAR()
+{
+	int i;
+	struct winsize w;
+    ioctl(0, TIOCGWINSZ, &w); // get terminal window size
+
+	for (i = 0; i < w.ws_row; i++)
+		printf("\n\n"); // print 2 rows for every row in the terminal
+
+	printf("\033[0;0H"); // set cursor position to 0,0
+	return 0;
+}
+
 
 // displays a list of commands (and how to use them).
 int CMD_MENU()
@@ -153,6 +247,23 @@ int CMD_MENU()
 		printf(KNRM"%s\n", ftable[i].functionHelp);
 	}
 		
+	return 0;
+}
+
+// reinitialize the program in a fresh state.
+int CMD_REINT()
+{
+	int i;
+	printf("Reinitializing program...Cleaning up minodes");
+	// cycle through all minodes and if they are loaded still, save it
+	for(i = 0; i < NMINODES; i++)
+	{
+		printf(".");
+		while(minode[i].refCount)
+			iput(&minode[i]);
+	}
+	printf("minodes cleaned up...\n");
+	init("");
 	return 0;
 }
 
@@ -434,7 +545,7 @@ int CMD_LINK()
 	unsigned long inumber, oldIno;
 	int dev, newDev, i, rec_length, need_length, ideal_length, datab;
 	MINODE *mip;
-	DIR *dp;
+	DIR *dirp;
 	
 	if (pathname[0] == 0)
 	{
@@ -578,11 +689,11 @@ int CMD_LINK()
 		get_block(mip->dev, datab, buf2);
 
 		// enter the new entry as the first entry 
-		dp = (DIR *)buf2;
-		dp->rec_len = BLOCK_SIZE;
-		dp->name_len = strlen(child);
-		strncpy(dp->name, child, dp->name_len);
-		dp->inode = oldIno;
+		dirp = (DIR *)buf2;
+		dirp->rec_len = BLOCK_SIZE;
+		dirp->name_len = strlen(child);
+		strncpy(dirp->name, child, dirp->name_len);
+		dirp->inode = oldIno;
 		mip->INODE.i_size += BLOCK_SIZE;
 		// write the new block back to the disk
 		put_block(mip->dev, mip->INODE.i_block[i], buf2);
@@ -613,7 +724,7 @@ int CMD_SYMLINK()
 	int dev, i, r;
 	MINODE *mip, *pip;
 	char *cp, *parent, *child, buf[BLOCK_SIZE];
-	DIR *dp;
+	DIR *dirp;
 	
 	if (pathname[0] == 0)
 	{
@@ -782,6 +893,75 @@ int CMD_CHMOD()
 	return 0;
 }
 
+// change a file's owner
+int CMD_CHOWN()
+{
+	int owner, dev, inumber;
+	MINODE *mip;
+	
+	if (pathname[0] == 0)
+	{
+		printf("No pathname for the file to change owner given!\n");
+		return 1;
+	}
+	if (parameter[0] == 0)
+	{
+		printf("No new owner for the file given!\n");
+		return 1;
+	}
+
+	sscanf(parameter, "%d", &owner);
+	dev = root->dev;
+	inumber = getino(&dev, pathname);
+
+	if(!inumber)
+		return 1;
+
+	// load the file into memory
+	mip = iget(dev, inumber);
+
+	mip->INODE.i_uid = owner; // change its owner, mark it as dirty, and save
+	mip->dirty = 1;
+
+	iput(mip);
+	return 0;
+}
+
+// change a file's group
+int CMD_CHGRP()
+{
+	int group, dev, inumber;
+	MINODE *mip;
+	
+	if (pathname[0] == 0)
+	{
+		printf("No pathname for the file to change group given!\n");
+		return 1;
+	}
+	if (parameter[0] == 0)
+	{
+		printf("No new group for the file given!\n");
+		return 1;
+	}
+
+	sscanf(parameter, "%d", &group);
+	dev = root->dev;
+	inumber = getino(&dev, pathname);
+
+	if(!inumber)
+		return 1;
+
+	// load the file into memory
+	mip = iget(dev, inumber);
+
+	// change group to the group specified and mark as dirty
+	mip->INODE.i_gid = group;
+	mip->dirty = 1;
+
+	iput(mip);
+	return 0;
+}
+
 // print out information about a file
 int CMD_STAT()
 {
@@ -889,8 +1069,7 @@ void printFile(MINODE *mip, char *namebuf)
 		type = FILE;
 	}
 
-	//for the file permissions and file type
-	//info adapted from labs and pg 254-256 in the textbook
+	// print the permissions
 	if((mode & (1 << 8)))
 		printf("r");
 	else
@@ -930,62 +1109,70 @@ void printFile(MINODE *mip, char *namebuf)
 	else
 		printf("-");
 
-	// print the file info from the inode
+	// print the file info
 	printf(" %d %d %d %d", mip->INODE.i_links_count, mip->INODE.i_uid,mip->INODE.i_gid, mip->INODE.i_size);
 	Time = ctime(&(mip->INODE.i_mtime));
 	Time[strlen(Time) -1 ] = 0;
 	printf(" %s ", Time);
+	// set the pretty color based on file type
+	if (type == FILE)
+		printf(KNRM"");
+	else if (type == LINK)
+		printf(KCYN"");
+	else
+		printf(KBLU"");
+	printf(" %s", namebuf);
+	printf(KNRM"");
 
-	if((mode & 0120000) == 0120000)//if true then this file is a symlink
-		printf(" => %s\n",(char *)(mip->INODE.i_block));//file that the link points to
+	// if this is a symlink file, show the file it points to
+	if((mode & 0120000) == 0120000)
+		printf(" => %s\n",(char *)(mip->INODE.i_block));
 	else
 		printf("\n");
 
-	iput(mip);
+	iput(mip); // cleanup
 } 
 
 // print contents of a directory
 void printChild(int devicename, MINODE *mp)
 {
-	char buf[BLOCK_SIZE], filename[256], *cp;
-	DIR *dp;
+	char buf[BLOCK_SIZE], namebuf[256], *cp;
+	DIR *dirp;
 	int i, ino;
-	MINODE *currentMinode;
+	MINODE *temp;
 
-	// cycle through 12 direct blocks and print them
+	// cycle through direct blocks and print them
 	for(i = 0; i <= 11; i++)
 	{
 		if(mp->INODE.i_block[i])
 		{
 			get_block(devicename, mp->INODE.i_block[i], buf);
 			cp = buf;
-			dp = (DIR *)buf;
+			dirp = (DIR *)buf;
 
 			while(cp < &buf[BLOCK_SIZE])
 			{
-				strncpy(filename, dp->name, dp->name_len);
-				filename[dp->name_len] = 0;
+				strncpy(namebuf, dirp->name, dirp->name_len);
+				namebuf[dirp->name_len] = 0;
 
-				ino = dp->inode;
-				currentMinode = iget(devicename, ino); 
-				printFile(currentMinode, filename);		
-				cp+=dp->rec_len;
-				dp = (DIR *)cp;
+				ino = dirp->inode;
+				temp = iget(devicename, ino); 
+				printFile(temp, namebuf);		
+				cp+=dirp->rec_len;
+				dirp = (DIR *)cp;
 			}
 		}
 	}
 }
 
-// find the parentdir of the basename in the given path
-int findparent(char *pathname)
+// find the parent path
+int findparent(char *pathn)
 {
 	int i = 0;
-	while(i < strlen(pathname))
+	while(i < strlen(pathn))
 	{
-		if(pathname[i] == '/')
-		{
+		if(pathn[i] == '/')
 			return 1;
-		}
 		i++;
 	}
 	return 0;
@@ -998,7 +1185,7 @@ int my_mkdir(MINODE *pip, char *name)
 	unsigned long inumber, bnumber;
 	int i, datab, need_length, ideal_length, rec_length;
 	char buf[BLOCK_SIZE], buf2[BLOCK_SIZE], *cp;
-	DIR *dp;
+	DIR *dirp;
 	MINODE *mip;
 
 	// allocate an inode and a disk block for the new directory
@@ -1009,13 +1196,13 @@ int my_mkdir(MINODE *pip, char *name)
 
 	// setup information for the new directory
 	mip->INODE.i_mode = 0x41ED; // DIR and permissions
-	mip->INODE.i_uid = running->uid; //set the owner to be the running proc uid
+	mip->INODE.i_uid = running->uid; // owner uid
 	mip->INODE.i_gid = running->gid; // group id
-	mip->INODE.i_size = BLOCK_SIZE; // size in bytes
-	mip->INODE.i_links_count = 2; //2 links for . and ..
+	mip->INODE.i_size = 1024; // size in bytes
+	mip->INODE.i_links_count = 2; // links count
 	mip->INODE.i_atime = mip->INODE.i_ctime = mip->INODE.i_mtime = time(0L); // creation time
 	mip->INODE.i_blocks = 2; // blocks count in 512-byte blocks
-	mip->dirty = 1; // mark as dirty so that it is saved
+	mip->dirty = 1; // mark as dirty
 
 	for(i = 1; i < 15; i++) // clear the data blocks
 		mip->INODE.i_block[i] = 0;
@@ -1027,18 +1214,18 @@ int my_mkdir(MINODE *pip, char *name)
 	memset(buf, 0, BLOCK_SIZE);
 	dp = (DIR *)buf;
 	
-	dp->inode = inumber; //inode number of this directory
-	strncpy(dp->name, ".", 1);
-	dp->name_len = 1;
-	dp->rec_len = 12; //directory entry length
+	dp->inode = inumber; // inode number
+	strncpy(dp->name, ".", 1); // file name
+	dp->name_len = 1; // name length
+	dp->rec_len = 12; // directory entry length
 
 	cp = buf + dp->rec_len;
 	dp = (DIR *)cp;
 
-	dp->inode = pip->ino; //inode number of parent directory
-	dp->name_len = 2; 
-	strncpy(dp->name, "..", 2);
-	dp->rec_len = BLOCK_SIZE - 12; //record length is the rest of the block because no child directories yet
+	dp->inode = pip->ino; // inode number of parent DIR
+	dp->name_len = 2; // name length
+	strncpy(dp->name, "..", 2); // file name
+	dp->rec_len = BLOCK_SIZE - 12; // last DIR entry length to end of block
 
 	put_block(pip->dev, bnumber, buf); // save block to disk
 
@@ -1046,10 +1233,8 @@ int my_mkdir(MINODE *pip, char *name)
 	// get iblock count
 	i = 0;
 	while(pip->INODE.i_block[i])
-	{
 		i++;
-	}
-	i--;//the last block is this one, -1 to get parent
+	i--;
 
 	get_block(pip->dev, pip->INODE.i_block[i], buf);
 	dp = (DIR *)buf;
@@ -1094,11 +1279,11 @@ int my_mkdir(MINODE *pip, char *name)
 		get_block(pip->dev, datab, buf2);
 
 		// enter the new entry as the first entry in the new block
-		dp = (DIR *)buf2;
-		dp->rec_len = BLOCK_SIZE;
-		dp->name_len = strlen(name);
-		strncpy(dp->name, name, dp->name_len);
-		dp->inode = inumber;
+		dirp = (DIR *)buf2;
+		dirp->rec_len = BLOCK_SIZE;
+		dirp->name_len = strlen(name);
+		strncpy(dirp->name, name, dirp->name_len);
+		dirp->inode = inumber;
 
 		pip->INODE.i_size += BLOCK_SIZE;
 		
@@ -1109,8 +1294,8 @@ int my_mkdir(MINODE *pip, char *name)
 	// inc parent inode's link count by 1, touch its atime, and mark it dirty
 	pip->INODE.i_links_count++;
 	pip->INODE.i_atime = time(0L);
-	pip->dirty = 1;//mark as dirty so that it will be saved
-	iput(pip); //save the parent directory
+	pip->dirty = 1;
+	iput(pip); // cleanup
 	return 0;
 }
 
@@ -1120,7 +1305,7 @@ int my_creat(MINODE *pip, char *name)
 	unsigned long inumber;
 	int i = 0, datab, need_length, ideal_length, rec_length;
 	char buf[BLOCK_SIZE], buf2[BLOCK_SIZE], *cp;
-	DIR *dp;
+	DIR *dirp;
 	MINODE *mip;
 
 	// allocate an inode for the new file
@@ -1193,11 +1378,11 @@ int my_creat(MINODE *pip, char *name)
 
 		pip->INODE.i_size += BLOCK_SIZE;
 		// enter the new entry as the first entry 
-		dp = (DIR *)buf2;
-		dp->rec_len = BLOCK_SIZE;
-		dp->name_len = strlen(name);
-		strncpy(dp->name, name, dp->name_len);
-		dp->inode = inumber;
+		dirp = (DIR *)buf2;
+		dirp->rec_len = BLOCK_SIZE;
+		dirp->name_len = strlen(name);
+		strncpy(dirp->name, name, dirp->name_len);
+		dirp->inode = inumber;
 
 		// write the new block back to the disk
 		put_block(pip->dev, pip->INODE.i_block[i], buf2);
@@ -1345,7 +1530,7 @@ int rm_child(MINODE *parent, char *my_name)
 // recursively print the cwd
 void do_pwd(MINODE *wd)
 {
-	struct DIR *dp;
+	struct DIR *dirp;
 	char myname[256];
 	unsigned long myino, parentino;
 	int f;

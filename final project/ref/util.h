@@ -1,5 +1,3 @@
-/* Header file for the utility methods used in accessing the data blocks,
- in-memory nodes, directory  */
 #ifndef UTIL_H
 #define UTIL_H
 
